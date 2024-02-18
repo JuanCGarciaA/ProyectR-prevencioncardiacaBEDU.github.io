@@ -4,7 +4,8 @@ title: "About"
 
 Collaborators:
 
-- Karla Isabel Colín González.
-- Diana López Romero.
-- Juan Carlos García Andrade.
+-   Karla Isabel Colín González.
+-   Diana López Romero.
+-   Juan Carlos García Andrade.
 
+{{< fa brands github size=5x >}}
