@@ -1,0 +1,670 @@
+---
+title: "Proyecto_BEDU"
+format: html
+editor: visual
+---
+
+## Prevención de enfermedades cardiovasculares (ECV)
+
+## Introducción
+
+Los hábitos son parte fundamental de la vida de todas las personas, y dependiendo de ellos se moldea el estilo de vida, por lo tanto, esto se ve reflejado en diferentes aspectos; como lo es su personalidad, su estado de salud, sus tipos de lenguaje, entre otros.
+
+Sin embargo, hay acciones que de ser realizadas de una manera constante durante grandes periodos de tiempo pueden llegar a ser demasiado peligrosas que hagan desarrollar graves enfermedades o que inclusive podrían llegar a la muerte. Es por ello que debemos de ser capaces de revocar aquellos malos hábitos o generar nuevos que nos garanticen una mejor calidad de vida y que a la vez prolonguen los años de vitalidad.
+
+## Hipótesis
+
+$H_1:$
+
+La actividad física regular ejerce un efecto protector el cual reduce la incidencia de enfermedades cardiovasculares y metabólicas evidenciado mediante el incremento del índice de supervivencia en adultos mayores de 39 años con factores de riesgo concomitantes.
+
+$H_0:$
+
+La actividad física regular no ejerce un efecto protector el cual reduce la incidencia de enfermedades cardiovasculares y metabólicas evidenciado mediante el incremento del índice de supervivencia en adultos mayores de 39 años con factores de riesgo concomitantes.
+
+## Desarrollo
+
+Antes de realizar el análisis, el documento fue depurado por medio de Python, para no tener valores nulos, corregir el tipo de dato (en casos necesario), etc.
+
+### Análisis
+
+Primero se instalan las paqueterías necesarias:
+
+```{r}
+install.packages("readr")
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("survival")
+install.packages("survminer")
+install.packages("skimr")
+install.packages("ggpmisc")
+install.packages("cowplot")
+install.packages("caret")
+```
+
+Despues se carga las paqueterías que necesitaremos:
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(survival)
+library(survminer)
+library(skimr)
+library(ggpmisc)
+library(cowplot)
+library(caret)
+```
+
+Enseguida cargamos el documento que hemos seleccionado previamente:
+
+```{r}
+datos <- read.csv("https://raw.githubusercontent.com/JuanCGarciaA/BDPrevencionCardiacaBEDU/main/heart_data_2.csv")
+```
+
+(Entre las comillas va la dirección en donde hayamos guardado nuestro archivo.)
+
+Primero observamos de una manera breve los datos que tenemos:
+
+```{r}
+str(datos)
+```
+
+Como vemos algunas variables hacen referencia medidas bioquimicas(ap_hi, ap_lo, cholesterol,gluc, cardio), a algunos hábitos (smoke, alco,active), y otras a aspetos generales (gender, height, weight).
+
+Empezaremos calculando en valor del IMC para cada uno de nuestros registros, de igual manera, podremos determinar si una persona tiene hipertensión mediante su nivel de presión sistólica. Tambien hemos obsevado que tenemos la edad en días por lo que consideramos más conveniente cambiarlo a años.
+
+```{r}
+datos <- datos %>%
+  mutate(edad_anos =  ceiling(age / 365.25),
+         IMC = weight / (height/100)^2,
+         hipertension = ifelse(ap_hi > 130, 1, 0))
+```
+
+Inmediatamente obtenemos un análisis descriptivo de todas nuestras variables:
+
+```{r}
+summary(datos)
+```
+
+Ahora clasificaremos a nuestros registros de acuerdo a su valor de IMC:
+
+```{r}
+datos$IMC_categoria <- cut(
+  datos$IMC,
+  breaks = c(-Inf, 18.5, 25, 30, Inf),
+  labels = c("Bajo Peso", "Normal", "Sobrepeso", "Obesidad")
+)
+```
+
+Haremos una copia de varias columnas categóricas por si más adelante decidimos modificarlas para una mayor comprensión:
+
+```{r}
+datos$cardioND <- datos$cardio
+datos$smokeND <- datos$smoke
+datos$alcoND <- datos$alco
+datos$activeND <- datos$active
+```
+
+A continuación graficaremos nuestra distribución en base a la clasificación del IMC:
+
+```{r}
+
+# Visualización: Gráfico de barras para la distribución del IMC
+ggplot(datos, aes(x=IMC_categoria, fill=IMC_categoria)) +
+  geom_bar() +
+  labs(x="Categoría IMC", y="Cantidad", title="Distribución de IMC en la Población")
+```
+
+Como podemos ver, nuestros datos se encuentran sesgados hacia la derecha, lo cual puede considerarse malo, debido a que tenemos a un gran porcentaje dentro de los grupos de Sobrepreso y Obesidad.
+
+### Predicción de infarto
+
+Antes de ir de pensar en nuestro modelo, hemos decidido dividir a nuestros registros en grupos de acuerdo a la edad, para un mejor estudio:
+
+```{r}
+datos$edad_grupo <- cut(datos$edad_anos, breaks = 5)
+```
+
+Primero hemos de crear nuestro modelo, en este caso binomial, ya que a nosotros solo nos interesa saber si x persona debido a sus caracteristicas puede tener un infarto(exito) o no(fracaso).
+
+```{r}
+modelo_infarto <- glm(cardio ~ edad_grupo + gender + IMC_categoria + hipertension +
+                      cholesterol  + gluc + smoke + alco + active,
+                      family = binomial, data = datos)
+
+```
+
+Ya teniendo nuestro modelo, obtenemos un exploración significativa del mismo:
+
+```{r}
+summary(modelo_infarto)
+```
+
+\### Presión Arterial
+
+```{r}
+# Análisis de la presión arterial
+ggplot(datos, aes(x=ap_hi, y=ap_lo, color=hipertension)) + geom_point()
+
+```
+
+### Relaciones
+
+#### Hábitos vs Enfermedades Cardicas
+
+Para ello hemos de convertir las columnas que necesitaremos para nuestra comodidad.
+
+```{r}
+datos$cardio[datos$cardio == 0 ] <- 'Sin enfermedad'
+datos$cardio[datos$cardio == 1 ] <- 'Con enfermedad'
+datos$smoke[datos$smoke == 0 ] <- 'No fumador'
+datos$smoke[datos$smoke == 1 ] <- 'Fumador'
+datos$alco[datos$alco == 0 ] <- 'No alcoholico'
+datos$alco[datos$alco == 1 ] <- 'Alcoholico'
+datos$active[datos$active == 0 ] <- 'Sin actividad'
+datos$active[datos$active == 1 ] <- 'Activo'
+```
+
+Por otro lado, para poder ver como se relacionan los hábitos, y si estos se pudieran considerar como factores que hacen que una persona sea propensa a una enfermedad cardiaca; hemos decidido verlo a través de tablas de frecuencias, y para ello hemos de necesitar una función que nos ayude a sacar las frecuencias relativas en relación a dos variables.
+
+```{r}
+freq.table <- function (x, y, z){substitute(x %>%
+                                              group_by(y, z) %>%
+                                              summarise(n = n ()) %>%
+                                              mutate(freq = n / sum (n)))%>% eval}
+```
+
+Con lo anterior somos capaces de calcular la frecuencia relativa en base a enfermedades cardiacas x alcoholismo:
+
+```{r}
+alco <- freq.table(datos, alco, cardio)
+alco
+```
+
+Así mismo, haremos la prueba del Chi cuadrado, para saber si el alcoholismo afecta en que una persona pueda tener una enfermedad cardiaca o no.
+
+```{r}
+alcochi<-chisq.test(datos$cardio, datos$alco)
+```
+
+Realizaremos la grafica, sin embargo la proyectaremos más adelante para realizar una comparación con otras variables.
+
+```{r}
+alco.plot<-  ggplot(data = alco,  aes(x = cardio, y = freq, fill = cardio)) +
+  geom_bar(stat='identity', 
+           colour = 'black',
+           width=.75)+ 
+  geom_text(aes(label=round(freq,2)), 
+            position=position_dodge(width=0.9), 
+            vjust=-0.25)+
+  ylim (0, 1)+
+  facet_grid(~alco)+ #Se separa en un grid.
+  scale_fill_manual(values=c( "#EB2A2A", "#3AE457"))+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("Alcohol")+ #Se agrega el titulo
+  theme(plot.title = element_text(hjust = 0.5), #Centrado de titulo
+        axis.title.x=element_blank(), #Se elimina la visualización de las variables en la grafica
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  labs(y = "Proporción",
+       subtitle = paste("χ2 test; p-value: ", alcochi$p.value)) 
+```
+
+De igual manera, haremos lo del caso anterior, pero para las variables : active y smoke.
+
+Actividad física vs Enfermedad Cardiaca
+
+```{r}
+active<-freq.table(datos, active, cardio)
+active
+```
+
+Prueba de Chi Cuadrado:
+
+```{r}
+activechi<-chisq.test(datos$cardio, datos$active)
+```
+
+Enseguida realizamos la gráfica:
+
+```{r}
+active.plot<-ggplot(data = active,  aes(x = cardio, y = freq, fill = cardio)) +
+  geom_bar(stat='identity', colour = 'black',  width=0.75)+ 
+  geom_text(aes(label=round(freq,2)), position=position_dodge(width=0.9), vjust=-0.25)+
+  ylim (0, 1)+
+  facet_grid(~active)+ #Se separa en un grid.
+  scale_fill_manual(values=c("#EB2A2A", "#3AE457"))+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("Actividad")+ #Se agrega el titulo
+  theme(plot.title = element_text(hjust = 0.5), #Centrado de titulo
+        axis.title.x=element_blank(), #Se elimina la visualización de las variables en la grafica
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+ 
+  labs(y = "Proporción",
+       subtitle = paste("χ2 test; p-value: ", activechi$p.value))
+```
+
+Fumador x Enfermedad Cardiaca:
+
+```{r}
+smoke <- freq.table(datos, smoke, cardio)
+smoke
+```
+
+Prueba de Chi Cuadrado :
+
+```{r}
+smokechi<-chisq.test(datos$cardio, datos$smoke)
+```
+
+Y la gráfica :
+
+```{r}
+smoke.plot <- ggplot(data = smoke, aes(x = cardio, y = freq, fill = cardio)) +
+  geom_bar(stat='identity', colour = 'black',  width=0.75)+ 
+  geom_text(aes(label=round(freq,2)), position=position_dodge(width=0.9), vjust=-0.25)+
+  ylim (0, 1)+
+  facet_grid(~factor(smoke, levels=c('Fumador', 'No fumador')))+ #Se separa en un grid.
+  scale_fill_manual(values=c("#EB2A2A", "#3AE457"))+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("Fumadores")+ #Se agrega el titulo
+  theme(plot.title = element_text(hjust = 0.5), #Se centra el titulo
+        axis.title.x=element_blank(), #Se elimina la visualización de las variables en la grafica
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+ 
+  labs( y = "Proporción",
+        subtitle = paste("χ2 test; p-value:", smokechi$p.value))
+```
+
+Finalmente, somos capaces de poder realizar la comparación que se mencionó anteriormente. A continuación presentaremos las tres gráficas anteriores, para poder sacar nuestras conclusiones:
+
+```{r}
+
+
+#Graficas del estilo de vida.
+lifestyle.plot<-plot_grid(alco.plot + theme(legend.position="none"),
+                          active.plot + theme(legend.position="none"),
+                          smoke.plot + theme(legend.position="none"),
+                          ncol=3) 
+#Titulo general
+title <- ggdraw() + draw_label("Estilo de vida afecta en problemas cardiacos.",
+                               fontface='bold')
+
+lifestyle.plot<- plot_grid(title,
+                           lifestyle.plot,
+                           ncol = 1,
+                           rel_heights=c(0.1, 1))
+
+#Se crea las leyendas
+legend <- get_legend(smoke.plot +theme(legend.position = c(.45,.5),
+                                       legend.direction="horizontal"))
+
+
+lifestyle.plot<-plot_grid(lifestyle.plot,
+                          legend,
+                          ncol=1,
+                          rel_heights = c(1, .05))
+
+lifestyle.plot
+
+```
+
+#### Rasgos cualitativos vs Enfermedad Cardiaca
+
+Una característica muy representativa de las personas es su género, por consecuencia puede que esto sea un factor perjudicial para poder desarrollar una enfermedad de este tipo debido al tipo de cuerpo y a todo lo que involucra. Por tanto, hemos de comprobar si este afecta o no. Primero obtendremos las frecuencias de la relación:
+
+```{r}
+gender <- freq.table(datos, gender, cardio)
+gender
+```
+
+Realizamos nuestra prueba de Chi:
+
+```{r}
+genderchi<-chisq.test(datos$gender, datos$cardio)
+```
+
+Creamos nuestra gráfica:
+
+```{r}
+gender.plot<-ggplot(gender, aes(x = cardio, y = freq,  fill = cardio))+
+  geom_bar(stat='identity', colour = 'black',  width=0.75)+ 
+  ylim (0, 1)+
+  geom_text(aes(label=round(freq,2)), position=position_dodge(width=0.9), vjust=-0.25)+
+  facet_grid(~gender)+ #Se divide por genero
+  scale_fill_manual(values=c("#EB2A2A", "#3AE457"))+ 
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("Proporción por genero en enfermedades cardiacas.")+ #Se agrega titulo
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title.x=element_blank(), #Se elimina la visualización de las variables en la grafica
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+ 
+  labs(x = "", y = "Proporción",
+       subtitle = paste("χ2 test; p-value:", genderchi$p.value)) 
+```
+
+Y la proyectamos:
+
+```{r}
+gender.plot
+```
+
+#### Rasgos cuantitativos vs Enfermedad Cardiaca
+
+Ahora bien, somos concientes que tenemos otras cualidades que aunque no sean tan visibles puedan perjudicarnos, tal es el caso de la glucosa y el colesterol, así que los analisaremos también: Primero lo haremos con el colesterol, obteniendo sus frecuencias:
+
+```{r}
+cholesterol<-freq.table(datos, cholesterol, cardio)
+cholesterol
+```
+
+Realizamos nuestra prueba de Chi Cuadrado:
+
+```{r}
+cholchi<-chisq.test(datos$cholesterol, datos$cardio)
+```
+
+E inmediatamente creamos la grafica :
+
+```{r}
+cholesterol.plot<-ggplot(cholesterol, aes(x = cholesterol, y = freq,  fill = cardio))+
+  geom_bar(stat = 'identity', width=0.85, position = position_fill (reverse = TRUE))+
+  scale_fill_manual(values=c("#EB2A2A", "#3AE457"))+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle(" Colesterol")+ #Se agrega el titulo
+  theme(plot.title = element_text(hjust = 0.5))+ #Se centra el titulo
+  labs(x = "Nivel de colesterol", y = "Proporción",
+       subtitle = paste("χ2 test; p-value:", cholchi$p.value)) 
+```
+
+Haremos lo mismo para la glucosa, calculamos las frecuencias:
+
+```{r}
+gluc<-freq.table(datos, gluc, cardio)
+gluc
+```
+
+Enseguida la prueba de Chi:
+
+```{r}
+glucchi<-chisq.test(datos$gluc, datos$cardio)
+```
+
+Seguido de nuestra gráfica:
+
+```{r}
+gluc.plot<-ggplot(gluc, aes(x = gluc, y = freq,  fill = cardio))+
+  geom_bar(stat = 'identity', width=0.85, position = position_fill (reverse = TRUE))+
+  scale_fill_manual(values=c("#EB2A2A", "#3AE457"))+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("Glucosa")+ 
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(x = "Nivel de glucosa", y = "Proporción",
+       subtitle = paste("χ2 test; p-value:", glucchi$p.value)) 
+```
+
+A final volvemos a realizar un comparativo de ambas variables, por medio de sus gráficas, así que hemos decidido juntarlas:
+
+```{r}
+gluc_and_chol<-plot_grid(cholesterol.plot+ theme(legend.position="none"),
+                         gluc.plot+ theme(legend.position="none"),
+                         ncol=2,
+                         rel_heights = c(1, .1))
+
+title_chol <- ggdraw() + draw_label("Efecto del colesterol y glucosa en las enfermedaddes cardiacas", fontface='bold')          
+
+gluc_and_chol<- plot_grid(title_chol,
+                          gluc_and_chol,
+                          ncol = 1,
+                          rel_heights=c(0.1, 1))
+
+gluc_and_chol<-plot_grid(gluc_and_chol,
+                         legend,
+                         ncol=1,
+                         rel_heights = c(1, .05))
+
+```
+
+Sin más la proyectamos:
+
+```{r}
+gluc_and_chol
+```
+
+Pr otro lado, tenemos otro dato cuantitativo: la edad; pero este lo analizaremos por separado ya que no tiene relación con los otros dos anteriores. Se crea la tabla de frecuencias:
+
+```{r}
+age <- freq.table(datos, edad_anos, cardio)
+
+```
+
+Realizamos la gráfica:
+
+```{r}
+age.plot<-ggplot(age, aes(x = edad_anos, y = freq,  fill = cardio))+
+  geom_bar(stat = 'identity', width=0.85, position = position_fill (reverse = TRUE))+
+  scale_fill_manual(values=c("#EB2A2A", "#3AE457"))+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("Proporción de edad")+ #Titulo
+  theme(plot.title = element_text(hjust = 0.5))+ #Centrado de titulo
+  labs(x = "Edad", y = "Proporción" )
+```
+
+Después nos enfocamos unicamente en aquellos que estan enfermos, y obtenemos el valor de su correlación:
+
+```{r}
+age.1<-subset(age, cardio == "Con enfermedad") #Nos enfocamos solo en los que tienen enfermedad
+
+corage<-cor(age.1$edad_anos,age.1$freq)
+```
+
+Aquí observamos una correlacion del 0.97, lo cual podría considerarse como bueno. Gaficamos lo que obtuvimos anteriormente :
+
+```{r}
+age.tendency.plot<-ggplot(data = age.1, aes(x = edad_anos, y = freq, fill = cardio)) +
+  stat_poly_line(color="#0C457D") +#Se agrega la linea de tendencia
+  stat_poly_eq(aes(label = paste(after_stat(eq.label),
+                                 after_stat(rr.label), 
+                                 sep = "*\", \"*")))+ #Se agrega la ecuación y la r2
+  geom_point(color="#EB2A2A")+
+  geom_line(color="#EB2A2A")+
+  ylim(0,1)+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("Tendencia de edad")+ #Se agrega el titulo
+  theme(plot.title = element_text(hjust = 0.5))+ #Centrado de titulo
+  labs(x = "Edad", y = "Proporción" )
+```
+
+Y ahora hacemos visibles ambas gráficas:
+
+```{r}
+
+#Se ponen las dos graficas en un mismo espacio
+ages.plot<-plot_grid(age.plot+ theme(legend.position="none"),
+                     age.tendency.plot+ theme(legend.position="none"),
+                     ncol=2,
+                     rel_heights = c(1, .1))
+
+title_ages <- ggdraw() + draw_label("Tendencia de la edad en las enfermedades cardiovasculares.",
+                                    fontface='bold')          
+
+ages.plot<- plot_grid(title_ages,
+                      ages.plot,
+                      ncol = 1,
+                      rel_heights=c(0.1, 1))
+
+ages.plot<-plot_grid(ages.plot,
+                     legend,
+                     ncol=1,
+                     rel_heights = c(1, .05))
+
+ages.plot
+```
+
+#### IMC vs Enfermedad Cardiaca
+
+Como sabemos el IMC es una medida que depende del peso y la altura, es por ello, que decidimos analizarlos a través de esta medida. Primero hemos de eliminar aquellos valores que consideramos atipicos, para no tengamos valores extremos ni muy pequeños; y se hará aplicando el método de IQR:
+
+```{r}
+IQRmethod <- function(x,y){quartiles <- quantile(y, probs=c(.25, .75),
+                                                 na.rm = FALSE)
+no_outlier <- subset(x, y > quartiles[1] - 1.5*IQR(y) & y < quartiles[2] + 1.5*IQR(y))
+return(no_outlier)}
+
+```
+
+Ahora los eliminamos:
+
+```{r}
+imc_cutt <- IQRmethod(datos, datos$IMC)
+```
+
+Ya sin esos registros somos capaces de obtener nuestras frecuencias:
+
+```{r}
+bmi<-freq.table(imc_cutt, IMC_categoria, cardio)
+```
+
+Realizamos la gráfica:
+
+```{r}
+bmi.plot<-ggplot(bmi, aes(x = IMC_categoria, y = freq, fill = cardio))+
+  geom_bar(stat = 'identity', width=0.85, position = position_fill (reverse = TRUE))+
+  scale_fill_manual(values=c("#EB2A2A", "#3AE457"))+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("Proporción del índice de masa corporal (IMC)")+ #Titulo
+  theme(plot.title = element_text(hjust = 0.5))+ #Centrado de titulo
+  labs(x = "Categoría IMC", y = "Proporción" )
+```
+
+Obtenemos la tabla de frecuencias, redondeando el valor del IMC
+
+```{r}
+bmi.round<-freq.table(imc_cutt, round(IMC), cardio)
+```
+
+Hacemos el enfoque con aquellos que estan enfermos:
+
+```{r}
+bmi.1<-subset(bmi.round, cardio == "Con enfermedad")
+```
+
+Obtenemos el valor de la correlación:
+
+```{r}
+corbmi<-cor(bmi.1$`round(IMC)`,bmi.1$freq)
+```
+
+Realizamos la gráfica de lo anterior:
+
+```{r}
+bmi.tendency.plot<-ggplot(data = bmi.1, aes(x = `round(IMC)`, y = freq, fill = cardio)) +
+  stat_poly_line(color="#0C457D") + #Se agrega la linea de dentencia
+  stat_poly_eq(aes(label = paste(after_stat(eq.label), #Ecuacion r2
+                                 after_stat(rr.label), 
+                                 sep = "*\", \"*")))+
+  geom_point(color="#EB2A2A")+
+  geom_line(color="#EB2A2A")+
+  ylim(0,1)+
+  theme_half_open(12)+
+  panel_border()+
+  ggtitle("IMC tendencia")+ #Titulo
+  theme(plot.title = element_text(hjust = 0.5))+ #Centrado de titulo
+  labs(x = "IMC", y = "Proporción" )
+```
+
+Para después, poner ambas gráficas:
+
+```{r}
+bmi.plot1<-plot_grid(bmi.plot+ theme(legend.position="none"),
+                     bmi.tendency.plot+ theme(legend.position="none"),
+                     ncol=2,
+                     rel_heights = c(1, .1))
+
+title_bmi <- ggdraw() + draw_label("Tendencia del IMC en enfermedades cardiovasculares", fontface='bold')          
+
+bmi.plot1<- plot_grid(title_bmi,
+                      bmi.plot1,
+                      ncol = 1,
+                      rel_heights=c(0.1, 1))
+
+bmi.plot1<-plot_grid(bmi.plot1,
+                     legend,
+                     ncol=1,
+                     rel_heights = c(1, .05))
+
+```
+
+Y proyectarlas:
+
+```{r}
+bmi.plot1
+
+```
+
+### Curvas de Kaplan-Meier para supervivencia
+
+"Este método se usa principalmente para obtener curvas de supervivencia a partir de de los datos de timpo de vida... obtiene una estimacion de la funcion de supervivencia por medio de una función escalonada" (Uribe,J.C.S.,García Cruz,E.K.,Gaviria Peña,C.,Guarín Escudero,V.(2020).'Introducción al análisis de supervivencia avanzada'.Colombia:Editorial Bonaventuriano.)
+
+Primero calcularemos nuestros valores, con ayuda de las fuciones Suv() y survfit():
+
+```{r}
+surv_obj <- Surv(time = datos$edad_anos, event = datos$cardioND)
+surv_fit <- survfit(surv_obj ~ IMC_categoria, data = datos)
+ggsurvplot(surv_fit, data = datos, pval = TRUE)
+
+```
+
+Hacemos visible el resultado por medio de una grafica:
+
+```{r}
+ggplot(datos, aes(x = IMC)) + geom_histogram(binwidth = 1, fill = 'blue', alpha = 0.7) + labs(title = "Distribución del IMC") + scale_x_continuous(limits = c(0,75))
+```
+
+### Adicionales
+
+Creamos una tabla de contingencia con la relación entre actividad física y enfermedad cardiaca. Esto para verificar y resumi estos datos categóricos.
+
+```{r}
+tabla_contingencia <- with(datos, table(activeND, cardioND))
+
+```
+
+Calculamos el odds ratio(razón de probabilidad),
+
+```{r}
+resultado_or <- (33679/35054) /(36429/32305)
+print(resultado_or)
+```
+
+Se realizar la prueba de Chi-cuadrado para evaluar la significación estadística de la asociación:
+
+```{r}
+test_chi_cuadrado <- chisq.test(tabla_contingencia)
+print(test_chi_cuadrado)
+
+```
+
+Si necesitas un modelo más ajustado o controlar por confundidores, considera utilizar una regresión logística:
+
+```{r}
+modelo_logistico <- glm(cardioND ~ activeND, data = datos, family = "binomial")
+summary(modelo_logistico)
+```
+
+Para obtener el OR de la regresión logística
+
+```{r}
+exp(coef(modelo_logistico))
+```
+
